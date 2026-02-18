@@ -1,6 +1,6 @@
 @echo off
 echo =============================================
-echo  Ampdeck v1.0.1 - Stream Deck Plugin
+echo  Ampdeck v1.3.1 - Stream Deck Plugin
 echo  The Unofficial Plexamp Controller
 echo =============================================
 echo.
@@ -20,8 +20,8 @@ if "%ERRORLEVEL%"=="0" (
 )
 
 :: Set the plugin directory
-set "PLUGIN_DIR=%APPDATA%\Elgato\StreamDeck\Plugins\com.rackemrack.ampdeck.sdPlugin"
-set "SOURCE_DIR=%~dp0com.rackemrack.ampdeck.sdPlugin"
+set "PLUGIN_DIR=%APPDATA%\Elgato\StreamDeck\Plugins\com.dreadheadhippy.ampdeck.sdPlugin"
+set "SOURCE_DIR=%~dp0com.dreadheadhippy.ampdeck.sdPlugin"
 
 :: Remove old installation if exists
 if exist "%PLUGIN_DIR%" (

@@ -6,7 +6,7 @@
   "Name": "Ampdeck",
   "Icon": "imgs/plugin-icon",
   "URL": "https://plex.tv",
-  "Version": "1.1.0",
+  "Version": "1.3.1",
   "Category": "Ampdeck",
   "CategoryIcon": "imgs/category-icon",
   "OS": [
@@ -34,7 +34,7 @@
       ],
       "SupportedInMultiActions": false,
       "Tooltip": "Displays album art from Plexamp. Press to play/pause.",
-      "UUID": "com.rackemrack.ampdeck.album-art",
+      "UUID": "com.dreadheadhippy.ampdeck.album-art",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -47,7 +47,7 @@
       ],
       "SupportedInMultiActions": false,
       "Tooltip": "Shows now playing info on the touch strip with configurable dial controls",
-      "UUID": "com.rackemrack.ampdeck.strip",
+      "UUID": "com.dreadheadhippy.ampdeck.strip",
       "Controllers": ["Encoder"],
       "Encoder": {
         "layout": "layouts/now-playing.json",
@@ -70,7 +70,7 @@
       ],
       "SupportedInMultiActions": true,
       "Tooltip": "Toggle play/pause",
-      "UUID": "com.rackemrack.ampdeck.play-pause",
+      "UUID": "com.dreadheadhippy.ampdeck.play-pause",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -84,7 +84,7 @@
       ],
       "SupportedInMultiActions": true,
       "Tooltip": "Tap for previous track, hold to rewind",
-      "UUID": "com.rackemrack.ampdeck.previous",
+      "UUID": "com.dreadheadhippy.ampdeck.previous",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -98,7 +98,7 @@
       ],
       "SupportedInMultiActions": true,
       "Tooltip": "Tap for next track, hold to fast forward",
-      "UUID": "com.rackemrack.ampdeck.next",
+      "UUID": "com.dreadheadhippy.ampdeck.next",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -112,7 +112,7 @@
       ],
       "SupportedInMultiActions": false,
       "Tooltip": "Shows track info: format, quality, track number",
-      "UUID": "com.rackemrack.ampdeck.info",
+      "UUID": "com.dreadheadhippy.ampdeck.info",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -126,7 +126,21 @@
       ],
       "SupportedInMultiActions": false,
       "Tooltip": "Shows elapsed / total time with progress bar",
-      "UUID": "com.rackemrack.ampdeck.time",
+      "UUID": "com.dreadheadhippy.ampdeck.time",
+      "PropertyInspectorPath": "pi.html"
+    },
+    {
+      "Icon": "imgs/rating-icon",
+      "Name": "Rating",
+      "States": [
+        {
+          "Image": "imgs/rating-icon",
+          "ShowTitle": false
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Shows current track rating. Tap to cycle ratings.",
+      "UUID": "com.dreadheadhippy.ampdeck.rating",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -140,7 +154,7 @@
       ],
       "SupportedInMultiActions": true,
       "Tooltip": "Toggle shuffle on/off",
-      "UUID": "com.rackemrack.ampdeck.shuffle",
+      "UUID": "com.dreadheadhippy.ampdeck.shuffle",
       "PropertyInspectorPath": "pi.html"
     },
     {
@@ -154,9 +168,9 @@
       ],
       "SupportedInMultiActions": true,
       "Tooltip": "Cycle repeat: Off → All → One",
-      "UUID": "com.rackemrack.ampdeck.repeat",
+      "UUID": "com.dreadheadhippy.ampdeck.repeat",
       "PropertyInspectorPath": "pi.html"
     }
   ],
-  "UUID": "com.rackemrack.ampdeck"
+  "UUID": "com.dreadheadhippy.ampdeck"
 }

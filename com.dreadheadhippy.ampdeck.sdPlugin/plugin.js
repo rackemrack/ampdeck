@@ -1,6 +1,35 @@
-// Ampdeck v1.1.0 - Stream Deck Plugin for Plexamp
+// Ampdeck v1.3.1 - Stream Deck Plugin for Plexamp
 // Local player API for commands + timeline poll for real-time playback position
 // Server connection retained for metadata and album art
+
+// File-based logging for debugging
+var debugLogs = [];
+var maxLogs = 500; // Keep last 500 log entries
+function debugLog(tag, message, data) {
+    var timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+    var logEntry = `[${timestamp}] ${tag} ${message}`;
+    if (data !== undefined) {
+        logEntry += ' ' + JSON.stringify(data, null, 2);
+    }
+    debugLogs.push(logEntry);
+    if (debugLogs.length > maxLogs) {
+        debugLogs.shift(); // Remove oldest
+    }
+    console.log(tag, message, data); // Still log to console too
+}
+
+// Make logs accessible globally - you can call window.dumpLogs() in browser console
+window.dumpLogs = function() {
+    console.log("=== AMPDECK DEBUG LOGS ===");
+    console.log(debugLogs.join('\n'));
+    alert("Logs copied to console! See console tab (F12).\n\nTotal entries: " + debugLogs.length);
+    return debugLogs.join('\n');
+};
+
+window.clearLogs = function() {
+    debugLogs = [];
+    console.log("Debug logs cleared");
+};
 
 var websocket = null;
 var pluginUUID = null;
@@ -39,9 +68,18 @@ var VOLUME_STEP = 5;
 var currentShuffle = 0;
 var currentRepeat = 0;
 
+// Rating state
+var currentRating = 0; // 0-10 (0 = unrated, 2 = 1 star, 4 = 2 stars, etc.)
+var RATING_HALF_STAR = 1;
+var RATING_FULL_STAR = 2;
+var lastRatingChangeTime = 0; // Timestamp to prevent timeline from overwriting user changes
+var ratingSaveTimer = null; // Timer for debounced rating save
+var pendingRatingContext = null; // Context that has a pending rating save
+var userSetRatings = {}; // Track user-set ratings by ratingKey to handle Plex cache delays
+
 // Local player API command tracking
 var localCommandID = 0;
-var CLIENT_IDENTIFIER = "com.rackemrack.ampdeck";
+var CLIENT_IDENTIFIER = "com.dreadheadhippy.ampdeck";
 
 // Connection state tracking
 var localPlayerConnected = false;
@@ -113,6 +151,53 @@ function getPlayerUrl() {
 function getNextCommandID() {
     localCommandID++;
     return localCommandID;
+}
+
+// ============================================
+// URL VALIDATION & SECURITY
+// ============================================
+function validateUrl(url, allowHttp) {
+    if (!url || typeof url !== 'string') return { valid: false, error: "URL is required" };
+    
+    try {
+        var parsed = new URL(url);
+        
+        // Only allow HTTP(S) protocols
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return { valid: false, error: "Only HTTP and HTTPS protocols are allowed" };
+        }
+        
+        // Warn about HTTP if not explicitly allowed
+        if (parsed.protocol === 'http:' && !allowHttp) {
+            // Allow localhost/127.0.0.1 over HTTP (for local player)
+            var isLocalhost = parsed.hostname === 'localhost' || 
+                            parsed.hostname === '127.0.0.1' || 
+                            parsed.hostname.startsWith('192.168.') ||
+                            parsed.hostname.startsWith('10.') ||
+                            parsed.hostname.startsWith('172.');
+            
+            if (!isLocalhost) {
+                return { valid: false, error: "HTTPS required for remote servers. HTTP is only allowed for local network." };
+            }
+        }
+        
+        return { valid: true, url: parsed.href };
+    } catch (e) {
+        return { valid: false, error: "Invalid URL format: " + e.message };
+    }
+}
+
+function createSecureHeaders(includeToken) {
+    var headers = {
+        "Accept": "application/json",
+        "X-Plex-Client-Identifier": CLIENT_IDENTIFIER
+    };
+    
+    if (includeToken && globalSettings.plexToken) {
+        headers["X-Plex-Token"] = globalSettings.plexToken;
+    }
+    
+    return headers;
 }
 
 // ============================================
@@ -202,7 +287,11 @@ function connectElgatoStreamDeckSocket(inPort, inPluginUUID, inRegisterEvent, in
     websocket.onopen = function() {
         websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inPluginUUID }));
         websocket.send(JSON.stringify({ event: "getGlobalSettings", context: inPluginUUID }));
-        log("Plugin connected - Ampdeck v1.1.0");
+        console.log("==========================================");
+        console.log("AMPDECK v1.3.1 - PLUGIN CONNECTED");
+        console.log("Check console for [OVERLAY], [VOLUME], [RATING], [STRIP] messages");
+        console.log("==========================================");
+        log("Plugin connected - Ampdeck v1.3.1");
     };
 
     websocket.onmessage = function(evt) {
@@ -279,7 +368,7 @@ function onKeyDown(data) {
     var ctx = data.context, action = data.action;
     buttonHoldState[ctx] = { pressTime: Date.now(), action: action, seekInterval: null, didSeek: false };
 
-    if (action === "com.rackemrack.ampdeck.previous" || action === "com.rackemrack.ampdeck.next") {
+    if (action === "com.dreadheadhippy.ampdeck.previous" || action === "com.dreadheadhippy.ampdeck.next") {
         setTimeout(function() {
             if (buttonHoldState[ctx] && !buttonHoldState[ctx].didSeek) {
                 buttonHoldState[ctx].didSeek = true;
@@ -296,11 +385,12 @@ function onKeyUp(data) {
     if (hs && hs.seekInterval) clearInterval(hs.seekInterval);
 
     if (!hs || !hs.didSeek) {
-        if (action === "com.rackemrack.ampdeck.album-art" || action === "com.rackemrack.ampdeck.play-pause") togglePlayPause();
-        else if (action === "com.rackemrack.ampdeck.previous") skipPrevious();
-        else if (action === "com.rackemrack.ampdeck.next") skipNext();
-        else if (action === "com.rackemrack.ampdeck.shuffle") toggleShuffle();
-        else if (action === "com.rackemrack.ampdeck.repeat") cycleRepeat();
+        if (action === "com.dreadheadhippy.ampdeck.album-art" || action === "com.dreadheadhippy.ampdeck.play-pause") togglePlayPause();
+        else if (action === "com.dreadheadhippy.ampdeck.previous") skipPrevious();
+        else if (action === "com.dreadheadhippy.ampdeck.next") skipNext();
+        else if (action === "com.dreadheadhippy.ampdeck.shuffle") toggleShuffle();
+        else if (action === "com.dreadheadhippy.ampdeck.repeat") cycleRepeat();
+        else if (action === "com.dreadheadhippy.ampdeck.rating") cycleRating(ctx);
     }
     delete buttonHoldState[ctx];
 }
@@ -324,8 +414,55 @@ function onDialRotate(data) {
         }
     } else if (dialAction === "volume") {
         var newVolume = Math.max(0, Math.min(100, currentVolume + (ticks * VOLUME_STEP)));
+        debugLog("[VOLUME]", "Adjusting volume from " + currentVolume + " to " + newVolume);
         setVolume(newVolume);
+        debugLog("[VOLUME]", "Calling showStripOverlay");
         showStripOverlay(ctx, "VOLUME", newVolume + "%");
+    } else if (dialAction === "rating") {
+        debugLog("[RATING]", "Rating dial action triggered");
+        debugLog("[RATING]", "Ticks: " + ticks + " (direction: " + (ticks > 0 ? "clockwise" : "counter-clockwise") + ")");
+        debugLog("[RATING]", "currentTrack:", currentTrack);
+        debugLog("[RATING]", "currentRating before change: " + currentRating);
+        if (!currentTrack) {
+            debugLog("[RATING]", "ERROR: No current track!");
+            return;
+        }
+        debugLog("[RATING]", "Track ratingKey: " + currentTrack.ratingKey);
+        var ratingMode = settings.ratingMode || "half";
+        var step = ratingMode === "half" ? RATING_HALF_STAR : RATING_FULL_STAR;
+        debugLog("[RATING]", "Rating mode: " + ratingMode + ", step: " + step);
+        var newRating = Math.max(0, Math.min(10, currentRating + (ticks * step)));
+        debugLog("[RATING]", "Calculation: " + currentRating + " + (" + ticks + " * " + step + ") = " + (currentRating + (ticks * step)) + " -> clamped to " + newRating);
+        
+        // Update rating locally (don't save yet)
+        currentRating = newRating;
+        lastRatingChangeTime = Date.now();
+        
+        // Store this rating for this track to handle Plex cache delays
+        if (currentTrack && currentTrack.ratingKey) {
+            userSetRatings[currentTrack.ratingKey] = newRating;
+        }
+        
+        // Show overlay immediately
+        var stars = formatRating(newRating, ratingMode);
+        debugLog("[RATING]", "Formatted stars: " + stars);
+        showStripOverlay(ctx, "RATING", stars);
+        
+        // Cancel any existing save timer
+        if (ratingSaveTimer) {
+            clearTimeout(ratingSaveTimer);
+            debugLog("[RATING]", "Cancelled previous save timer");
+        }
+        
+        // Start new timer to save after 2 seconds of inactivity
+        pendingRatingContext = ctx;
+        ratingSaveTimer = setTimeout(function() {
+            debugLog("[RATING]", "Save timer expired, saving rating now");
+            setRating(currentRating, pendingRatingContext);
+            ratingSaveTimer = null;
+            pendingRatingContext = null;
+        }, 2000);
+        debugLog("[RATING]", "Started 2-second save timer");
     }
 }
 
@@ -363,14 +500,20 @@ function onTouchTap(data) {
 // TOUCH STRIP OVERLAY
 // ============================================
 function showStripOverlay(ctx, text, subtext) {
+    debugLog("[OVERLAY]", "showStripOverlay called - text: " + text + ", subtext: " + subtext);
     if (!stripOverlays[ctx]) stripOverlays[ctx] = { active: false, text: "", subtext: "", timer: null };
     var ov = stripOverlays[ctx];
-    if (ov.timer) clearTimeout(ov.timer);
+    if (ov.timer) {
+        debugLog("[OVERLAY]", "Clearing existing timer");
+        clearTimeout(ov.timer);
+    }
     ov.active = true;
     ov.text = text;
     ov.subtext = subtext;
+    debugLog("[OVERLAY]", "State set, calling updateAllDisplays");
     updateAllDisplays();
     ov.timer = setTimeout(function() {
+        debugLog("[OVERLAY]", "Timer fired - clearing overlay and reverting");
         ov.active = false;
         ov.timer = null;
         lastLayoutState[ctx] = null;
@@ -419,14 +562,15 @@ function serverCommand(path, extraParams) {
     }
 
     var url = globalSettings.plexServerUrl + path + "?commandID=1"
-        + "&X-Plex-Token=" + globalSettings.plexToken
         + "&X-Plex-Target-Client-Identifier=" + machineId;
 
     if (extraParams) url += "&" + extraParams;
 
     logDebug("Server fallback command: " + url);
 
-    return fetch(url).then(function(r) {
+    return fetch(url, {
+        headers: createSecureHeaders(true)
+    }).then(function(r) {
         if (!r.ok) logError("Server command failed: HTTP " + r.status + " for " + path);
         else logDebug("Server command OK: " + path);
         return r;
@@ -500,6 +644,130 @@ function cycleRepeat() {
         logDebug("Repeat: " + labels[currentRepeat]);
     });
     updateAllDisplays();
+}
+
+function cycleRating(ctx) {
+    if (!currentTrack || !currentTrack.ratingKey) {
+        logWarn("Cannot rate: No current track");
+        return;
+    }
+    
+    // Get rating mode from button settings
+    var settings = actions[ctx] ? actions[ctx].settings : {};
+    var ratingMode = settings.ratingMode || "half";
+    var step = ratingMode === "half" ? RATING_HALF_STAR : RATING_FULL_STAR;
+    
+    // Cycle through ratings: 0 → step → 2*step → ... → 10 → 0
+    var newRating = currentRating + step;
+    if (newRating > 10) newRating = 0;
+    
+    currentRating = newRating;
+    lastRatingChangeTime = Date.now();
+    
+    // Store this rating for this track to handle Plex cache delays
+    if (currentTrack && currentTrack.ratingKey) {
+        userSetRatings[currentTrack.ratingKey] = newRating;
+    }
+    
+    logDebug("Rating cycled to: " + (newRating / 2).toFixed(1) + " stars (" + newRating + "/10) [mode: " + ratingMode + "]");
+    
+    // Update display immediately
+    updateAllDisplays();
+    
+    // Cancel any existing save timer
+    if (ratingSaveTimer) {
+        clearTimeout(ratingSaveTimer);
+        debugLog("[RATING]", "Cancelled previous save timer (button press)");
+    }
+    
+    // Start new timer to save after 2 seconds of inactivity (same as dial)
+    pendingRatingContext = ctx;
+    ratingSaveTimer = setTimeout(function() {
+        debugLog("[RATING]", "Save timer expired (button), saving rating now");
+        setRating(currentRating, pendingRatingContext);
+        ratingSaveTimer = null;
+        pendingRatingContext = null;
+    }, 2000);
+    debugLog("[RATING]", "Started 2-second save timer (button)");
+}
+
+function setRating(rating, ctx) {
+    debugLog("[RATING]", "setRating called with: " + rating);
+    if (!currentTrack || !currentTrack.ratingKey) {
+        debugLog("[RATING]", "ERROR: No track or ratingKey. currentTrack:", currentTrack);
+        if (ctx) showStripOverlay(ctx, "ERROR", "No Track");
+        return;
+    }
+    
+    // Update local state
+    currentRating = Math.max(0, Math.min(10, rating));
+    lastRatingChangeTime = Date.now();  // Mark when we changed it
+    debugLog("[RATING]", "Setting currentRating to: " + currentRating);
+    
+    var serverUrl = globalSettings.plexServerUrl;
+    var token = globalSettings.plexToken;
+    
+    debugLog("[RATING]", "Server URL: " + (serverUrl || "MISSING"));
+    debugLog("[RATING]", "Token: " + (token ? "present" : "MISSING"));
+    
+    if (!serverUrl || !token) {
+        debugLog("[RATING]", "ERROR: Missing server URL or token!");
+        if (ctx) showStripOverlay(ctx, "ERROR", "No Server");
+        return;
+    }
+    
+    var ratingKey = currentTrack.ratingKey;
+    var url = serverUrl + "/:/rate?key=" + ratingKey + "&identifier=com.plexapp.plugins.library&rating=" + currentRating;
+    
+    debugLog("[RATING]", "Sending PUT request to: " + url);
+    
+    fetch(url, { 
+        method: "PUT",
+        headers: {
+            "Accept": "application/json",
+            "X-Plex-Token": token
+        }
+    })
+        .then(function(r) {
+            if (!r.ok) {
+                debugLog("[RATING]", "ERROR: HTTP " + r.status);
+                // Show error on strip display
+                if (ctx) showStripOverlay(ctx, "ERROR", "HTTP " + r.status);
+                return r.text().then(function(text) {
+                    debugLog("[RATING]", "Response body: " + text);
+                });
+            } else {
+                debugLog("[RATING]", "SUCCESS: HTTP " + r.status + ", Rating set to " + currentRating);
+                // Update the track's userRating immediately so it's in sync
+                if (currentTrack) {
+                    currentTrack.userRating = currentRating;
+                }
+                // Note: Not polling timeline immediately as Plex cache may not be updated yet
+                // The grace period mechanism will prevent stale data from overwriting our change
+                // Success: no overlay shown, rating persists visibly on dial/button
+            }
+        })
+        .catch(function(e) {
+            debugLog("[RATING]", "ERROR: " + e.message);
+            // Show fetch error on strip display
+            if (ctx) showStripOverlay(ctx, "FETCH ERR", e.message.substring(0, 20));
+        });
+}
+
+function formatRating(rating, mode) {
+    // rating is 0-10, where 2 = 1 star, 10 = 5 stars
+    if (rating === 0) return "☆☆☆☆☆";
+    
+    var fullStars = Math.floor(rating / 2);
+    var hasHalfStar = mode === "half" && (rating % 2 === 1);
+    var emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+    
+    var result = "";
+    for (var j = 0; j < fullStars; j++) result += "★";
+    if (hasHalfStar) result += "⯨";
+    for (var k = 0; k < emptyStars; k++) result += "☆";
+    
+    return result;
 }
 
 function saveGlobalSettings() {
@@ -598,6 +866,16 @@ function processTimeline(xmlText) {
     var trackEl = trackElements.length > 0 ? trackElements[0] : null;
 
     var trackChanged = ratingKey !== lastTimelineRatingKey;
+    
+    // If track is changing and there's a pending rating save, flush it immediately
+    if (trackChanged && ratingSaveTimer) {
+        clearTimeout(ratingSaveTimer);
+        debugLog("[RATING]", "Track changing, flushing pending rating save immediately");
+        setRating(currentRating, pendingRatingContext);
+        ratingSaveTimer = null;
+        pendingRatingContext = null;
+    }
+    
     lastTimelineRatingKey = ratingKey;
 
     if (trackEl) {
@@ -621,6 +899,7 @@ function updateTrackFromTimelineMetadata(trackEl, machineId, address, port, prot
         parentRatingKey: trackEl.getAttribute("parentRatingKey"),
         index: trackEl.getAttribute("index"),
         duration: parseInt(trackEl.getAttribute("duration")) || trackDuration,
+        userRating: parseInt(trackEl.getAttribute("userRating")) || 0,
         type: "track",
         Player: {
             machineIdentifier: machineId,
@@ -651,7 +930,36 @@ function updateTrackFromTimelineMetadata(trackEl, machineId, address, port, prot
     track.grandparentThumb = trackEl.getAttribute("grandparentThumb") || "";
 
     var trackChanged = !currentTrack || currentTrack.ratingKey !== track.ratingKey;
+    
+    // Clear old rating overrides when track changes to prevent memory buildup
+    if (trackChanged && currentTrack && currentTrack.ratingKey && userSetRatings[currentTrack.ratingKey] !== undefined) {
+        delete userSetRatings[currentTrack.ratingKey];
+        debugLog("[RATING]", "Cleared old rating override for previous track");
+    }
+    
     currentTrack = track;
+    
+    // Update rating with smart caching to handle Plex delays
+    var incomingRating = track.userRating || 0;
+    var userSetRating = userSetRatings[track.ratingKey];
+    
+    if (userSetRating !== undefined) {
+        // We recently set a rating for this track
+        if (incomingRating >= userSetRating) {
+            // Plex has updated (or user rated higher elsewhere), accept it
+            currentRating = incomingRating;
+            delete userSetRatings[track.ratingKey];
+            debugLog("[RATING]", "Plex cache updated, accepting rating: " + currentRating);
+        } else {
+            // Plex cache still stale, keep our local value
+            currentRating = userSetRating;
+            debugLog("[RATING]", "Plex cache stale (" + incomingRating + "), keeping local rating: " + currentRating);
+        }
+    } else {
+        // No local override, accept from Plex
+        currentRating = incomingRating;
+        debugLog("[RATING]", "Updated currentRating from track: " + currentRating);
+    }
 
     if (trackChanged) {
         albumTrackCount = null;
@@ -679,10 +987,15 @@ function fetchTrackMetadata(ratingKey, machineId, address, port, protocol, token
         return;
     }
 
-    var url = serverUrl + "/library/metadata/" + ratingKey + "?X-Plex-Token=" + serverToken;
+    var url = serverUrl + "/library/metadata/" + ratingKey;
     logDebug("Fetching track metadata: " + url);
 
-    fetch(url, { headers: { "Accept": "application/json" } })
+    fetch(url, { 
+        headers: { 
+            "Accept": "application/json",
+            "X-Plex-Token": serverToken
+        } 
+    })
         .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status);
             return r.json();
@@ -696,6 +1009,29 @@ function fetchTrackMetadata(ratingKey, machineId, address, port, protocol, token
                     product: "Plexamp"
                 };
                 currentTrack = meta;
+                
+                // Update rating with smart caching to handle Plex delays
+                var incomingRating = meta.userRating || 0;
+                var userSetRating = userSetRatings[meta.ratingKey];
+                
+                if (userSetRating !== undefined) {
+                    // We recently set a rating for this track
+                    if (incomingRating >= userSetRating) {
+                        // Plex has updated (or user rated higher elsewhere), accept it
+                        currentRating = incomingRating;
+                        delete userSetRatings[meta.ratingKey];
+                        debugLog("[RATING]", "Plex cache updated from metadata, accepting: " + currentRating);
+                    } else {
+                        // Plex cache still stale, keep our local value
+                        currentRating = userSetRating;
+                        debugLog("[RATING]", "Plex metadata cache stale, keeping local: " + currentRating);
+                    }
+                } else {
+                    // No local override, accept from Plex
+                    currentRating = incomingRating;
+                    debugLog("[RATING]", "Updated currentRating from metadata: " + currentRating);
+                }
+                
                 serverConnected = true;
 
                 albumTrackCount = null;
@@ -729,10 +1065,14 @@ function fetchAlbumArtFromTimeline(thumbPath, address, port, protocol, token) {
         return;
     }
 
-    var url = serverUrl + thumbPath + "?X-Plex-Token=" + serverToken;
+    var url = serverUrl + thumbPath;
     logDebug("Fetching album art: " + url);
 
-    fetch(url)
+    fetch(url, {
+        headers: {
+            "X-Plex-Token": serverToken
+        }
+    })
         .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status);
             return r.blob();
@@ -769,6 +1109,8 @@ function handleNoSession() {
         dominantColor = "#E5A00D";
         currentShuffle = 0;
         currentRepeat = 0;
+        currentRating = 0;
+        userSetRatings = {}; // Clear all cached ratings when no session
         updateDisplayPosition();
         updateAllDisplays();
     }
@@ -785,7 +1127,12 @@ function pollPlexServer() {
 
     logDebug("Falling back to server session poll");
 
-    fetch(globalSettings.plexServerUrl + "/status/sessions?X-Plex-Token=" + globalSettings.plexToken, { headers: { "Accept": "application/json" } })
+    fetch(globalSettings.plexServerUrl + "/status/sessions", { 
+        headers: { 
+            "Accept": "application/json",
+            "X-Plex-Token": globalSettings.plexToken
+        } 
+    })
         .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status);
             serverConnected = true;
@@ -800,6 +1147,21 @@ function pollPlexServer() {
                 var newPosition = track.viewOffset || 0;
                 var trackChanged = !currentTrack || currentTrack.ratingKey !== track.ratingKey;
 
+                // If track is changing and there's a pending rating save, flush it immediately
+                if (trackChanged && ratingSaveTimer) {
+                    clearTimeout(ratingSaveTimer);
+                    debugLog("[RATING]", "Track changing (server poll), flushing pending rating save immediately");
+                    setRating(currentRating, pendingRatingContext);
+                    ratingSaveTimer = null;
+                    pendingRatingContext = null;
+                }
+
+                // Clear old rating overrides when track changes
+                if (trackChanged && currentTrack && currentTrack.ratingKey && userSetRatings[currentTrack.ratingKey] !== undefined) {
+                    delete userSetRatings[currentTrack.ratingKey];
+                    debugLog("[RATING]", "Cleared old rating override for previous track (server poll)");
+                }
+
                 var syncOffset = globalSettings.syncOffset !== undefined ? parseInt(globalSettings.syncOffset) : 0;
                 currentPosition = newPosition + syncOffset;
                 lastPositionTimestamp = (newState === "playing") ? Date.now() : 0;
@@ -807,6 +1169,26 @@ function pollPlexServer() {
                 playbackState = newState;
                 trackDuration = newDuration;
                 currentTrack = track;
+                
+                // Update rating with smart caching to handle Plex delays
+                var incomingRating = track.userRating || 0;
+                var userSetRating = userSetRatings[track.ratingKey];
+                
+                if (userSetRating !== undefined) {
+                    // We recently set a rating for this track
+                    if (incomingRating >= userSetRating) {
+                        // Plex has updated, accept it
+                        currentRating = incomingRating;
+                        delete userSetRatings[track.ratingKey];
+                        debugLog("[RATING]", "Server poll: Plex updated, accepting: " + currentRating);
+                    } else {
+                        // Plex cache still stale, keep our local value
+                        currentRating = userSetRating;
+                        debugLog("[RATING]", "Server poll: keeping local rating: " + currentRating);
+                    }
+                } else {
+                    currentRating = incomingRating;
+                }
 
                 if (trackChanged) {
                     albumTrackCount = null;
@@ -851,8 +1233,13 @@ function fetchAlbumTrackCount(parentRatingKey) {
     lastParentRatingKey = parentRatingKey;
     albumTrackCount = null;
 
-    var url = globalSettings.plexServerUrl + "/library/metadata/" + parentRatingKey + "/children?X-Plex-Token=" + globalSettings.plexToken;
-    fetch(url, { headers: { "Accept": "application/json" } })
+    var url = globalSettings.plexServerUrl + "/library/metadata/" + parentRatingKey + "/children";
+    fetch(url, { 
+        headers: { 
+            "Accept": "application/json",
+            "X-Plex-Token": globalSettings.plexToken
+        } 
+    })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data && data.MediaContainer && data.MediaContainer.size) {
@@ -866,10 +1253,14 @@ function fetchAlbumTrackCount(parentRatingKey) {
 function fetchAlbumArt(thumbPath) {
     if (!globalSettings.plexServerUrl || !globalSettings.plexToken) return;
 
-    var url = globalSettings.plexServerUrl + thumbPath + "?X-Plex-Token=" + globalSettings.plexToken;
+    var url = globalSettings.plexServerUrl + thumbPath;
     logDebug("Fetching album art (server): " + url);
 
-    fetch(url)
+    fetch(url, {
+        headers: {
+            "X-Plex-Token": globalSettings.plexToken
+        }
+    })
         .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status);
             return r.blob();
@@ -895,13 +1286,14 @@ function fetchAlbumArt(thumbPath) {
 function updateAllDisplays() {
     for (var ctx in actions) {
         var action = actions[ctx].action;
-        if (action === "com.rackemrack.ampdeck.album-art") updateAlbumArtButton(ctx);
-        else if (action === "com.rackemrack.ampdeck.strip") updateStripDisplay(ctx);
-        else if (action === "com.rackemrack.ampdeck.play-pause") updatePlayPauseButton(ctx);
-        else if (action === "com.rackemrack.ampdeck.info") updateInfoButton(ctx);
-        else if (action === "com.rackemrack.ampdeck.time") updateTimeButton(ctx);
-        else if (action === "com.rackemrack.ampdeck.shuffle") updateShuffleButton(ctx);
-        else if (action === "com.rackemrack.ampdeck.repeat") updateRepeatButton(ctx);
+        if (action === "com.dreadheadhippy.ampdeck.album-art") updateAlbumArtButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.strip") updateStripDisplay(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.play-pause") updatePlayPauseButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.info") updateInfoButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.time") updateTimeButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.rating") updateRatingButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.shuffle") updateShuffleButton(ctx);
+        else if (action === "com.dreadheadhippy.ampdeck.repeat") updateRepeatButton(ctx);
     }
 }
 
@@ -984,19 +1376,19 @@ function updateInfoButton(ctx) {
         c.textAlign = "center";
         c.font = "bold 28px sans-serif";
         c.fillStyle = textColor;
-        c.fillText(format, 72, 42);
+        c.fillText(format, 72, 32);
 
-        c.font = "14px sans-serif";
-        c.fillStyle = secondaryColor;
-        c.fillText(bitrate, 72, 62);
+        c.font = "bold 22px sans-serif";
+        c.fillStyle = accentColor;
+        c.fillText(bitrate, 72, 65);
 
-        c.font = "bold 16px sans-serif";
+        c.font = "bold 24px sans-serif";
         c.fillStyle = textColor;
         c.fillText("TRACK", 72, 95);
 
-        c.font = "bold 28px sans-serif";
+        c.font = "bold 32px sans-serif";
         c.fillStyle = accentColor;
-        c.fillText(trackNum + "/" + totalTracks, 72, 125);
+        c.fillText(trackNum + "/" + totalTracks, 72, 132);
     } else {
         c.fillStyle = "#333333";
         c.textAlign = "center";
@@ -1025,23 +1417,88 @@ function updateTimeButton(ctx) {
         c.font = "20px sans-serif";
         c.fillText("/ 0:00", 72, 82);
         c.fillStyle = "#333333";
-        c.fillRect(15, 108, 114, 10);
+        c.fillRect(15, 113, 114, 10);
     } else {
         c.textAlign = "center";
         c.font = "bold 36px sans-serif";
         c.fillStyle = textColor;
         c.fillText(formatTime(currentPosition), 72, 55);
 
-        c.font = "20px sans-serif";
-        c.fillStyle = secondaryColor;
-        c.fillText("/ " + formatTime(trackDuration), 72, 82);
+        c.font = "bold 36px sans-serif";
+        c.fillStyle = accentColor;
+        c.fillText("/ " + formatTime(trackDuration), 72, 98);
 
         c.fillStyle = "#333333";
-        c.fillRect(15, 108, 114, 10);
+        c.fillRect(15, 113, 114, 10);
         if (displayProgress > 0) {
             c.fillStyle = accentColor;
-            c.fillRect(15, 108, (displayProgress / 100) * 114, 10);
+            c.fillRect(15, 113, (displayProgress / 100) * 114, 10);
         }
+    }
+    setImage(ctx, canvas.toDataURL("image/png"));
+}
+
+function updateRatingButton(ctx) {
+    var canvas = document.createElement("canvas");
+    canvas.width = 144; canvas.height = 144;
+    var c = canvas.getContext("2d");
+    c.fillStyle = "#000000";
+    c.fillRect(0, 0, 144, 144);
+
+    var settings = actions[ctx] ? actions[ctx].settings : {};
+    var fontSize = parseInt(settings.ratingFontSize) || 48;
+    var ratingMode = settings.ratingMode || "half";
+    var displayStyle = settings.ratingDisplay || "stars";
+    
+    var textColor = getTextColor();
+    var secondaryColor = getSecondaryTextColor();
+    var accentColor = getAccentColor();
+
+    if (currentTrack) {
+        // Display "RATING" label at top
+        c.textAlign = "center";
+        c.font = "bold 26px sans-serif";
+        c.fillStyle = textColor;
+        c.fillText("RATING", 72, 32);
+
+        // Display rating based on style preference
+        var hasHalfStar = currentRating % 2 === 1;
+        var numericRating;
+        
+        if (displayStyle === "stars") {
+            // Stars only
+            var stars = formatRating(currentRating, ratingMode);
+            c.font = "bold " + fontSize + "px sans-serif";
+            c.fillStyle = accentColor;
+            c.fillText(stars, 72, 90);
+        } else if (displayStyle === "numeric") {
+            // Numeric only (e.g., "4.5" or "4")
+            c.font = "bold " + fontSize + "px sans-serif";
+            c.textBaseline = "middle";
+            c.fillStyle = accentColor;
+            if (currentRating === 0) {
+                c.fillText("0", 72, 90);
+            } else {
+                numericRating = hasHalfStar ? (currentRating / 2).toFixed(1) : (currentRating / 2).toString();
+                c.fillText(numericRating, 72, 90);
+            }
+        } else {
+            // Both - numeric with scale (e.g., "4.5/5" or "4/5")
+            c.font = "bold " + fontSize + "px sans-serif";
+            c.textBaseline = "middle";
+            c.fillStyle = accentColor;
+            if (currentRating === 0) {
+                c.fillText("0/5", 72, 90);
+            } else {
+                numericRating = hasHalfStar ? (currentRating / 2).toFixed(1) : (currentRating / 2).toString();
+                c.fillText(numericRating + "/5", 72, 90);
+            }
+        }
+    } else {
+        c.fillStyle = "#333333";
+        c.textAlign = "center";
+        c.font = "16px sans-serif";
+        c.fillText("No Track", 72, 76);
     }
     setImage(ctx, canvas.toDataURL("image/png"));
 }
@@ -1168,9 +1625,11 @@ function updateStripDisplay(ctx) {
     // If overlay is active for THIS context, show overlay instead of normal content
     var ov = stripOverlays[ctx];
     if (ov && ov.active) {
+        debugLog("[STRIP]", "Rendering overlay - text: " + ov.text);
         renderStripOverlay(ctx, ov, settings);
         return;
     }
+    debugLog("[STRIP]", "Rendering normal display - mode: " + (settings.displayMode || "artist"));
 
     var displayMode = settings.displayMode || "artist";
     var fontSize = parseInt(settings.fontSize) || 16;
@@ -1204,7 +1663,7 @@ function updateStripDisplay(ctx) {
 
     var pausedDim = playbackState === "paused";
     var labelColor = pausedDim ? stripSecondary : textColor;
-    var textDisplayColor = pausedDim ? stripSecondary : stripSecondary;
+    var textDisplayColor = pausedDim ? stripSecondary : textColor;
 
     // Always use pixmap for displayText so font/position is consistent
     var textAreaH = fontSize + 8;
@@ -1212,13 +1671,13 @@ function updateStripDisplay(ctx) {
     if (lastLayoutState[ctx] !== layoutKey) {
         lastLayoutState[ctx] = layoutKey;
         setFeedbackLayout(ctx, {
-            "id": "com.rackemrack.ampdeck.layout",
+            "id": "com.dreadheadhippy.ampdeck.layout",
             "items": [
-                { "key": "label", "type": "text", "rect": [0, 15, 200, labelSize + 4],
+                { "key": "label", "type": "text", "rect": [0, 10, 200, labelSize + 4],
                   "font": { "size": labelSize, "weight": 700 },
                   "color": labelColor, "alignment": "center" },
-                { "key": "displayText", "type": "pixmap", "rect": [0, 15 + labelSize + 8, 200, textAreaH] },
-                { "key": "progressBar", "type": "pixmap", "rect": [0, 82, 200, 4] }
+                { "key": "displayText", "type": "pixmap", "rect": [0, 10 + labelSize + 6, 200, textAreaH] },
+                { "key": "progressBar", "type": "pixmap", "rect": [0, 86, 200, 4] }
             ]
         });
     }
@@ -1343,13 +1802,13 @@ function renderStripOverlay(ctx, ov, settings) {
         lastLayoutState[ctx] = overlayKey;
 
         setFeedbackLayout(ctx, {
-            "id": "com.rackemrack.ampdeck.layout",
+            "id": "com.dreadheadhippy.ampdeck.layout",
             "items": [
-                { "key": "label", "type": "text", "rect": [0, 15, 200, labelSize + 4],
+                { "key": "label", "type": "text", "rect": [0, 10, 200, labelSize + 4],
                   "font": { "size": labelSize, "weight": 700 },
                   "color": accentColor, "alignment": "center" },
-                { "key": "displayText", "type": "pixmap", "rect": [0, 15 + labelSize + 8, 200, fontSize + 16] },
-                { "key": "progressBar", "type": "pixmap", "rect": [0, 82, 200, 4] }
+                { "key": "displayText", "type": "pixmap", "rect": [0, 10 + labelSize + 6, 200, fontSize + 16] },
+                { "key": "progressBar", "type": "pixmap", "rect": [0, 86, 200, 4] }
             ]
         });
     }
@@ -1396,7 +1855,7 @@ function renderStripOverlay(ctx, ov, settings) {
         sc.fillText(ov.subtext, 100, subtextH / 2);
     }
 
-    // Progress/volume bar
+    // Progress/volume/rating bar
     var barCanvas = document.createElement("canvas");
     barCanvas.width = 200; barCanvas.height = 4;
     var bc = barCanvas.getContext("2d");
@@ -1408,6 +1867,13 @@ function renderStripOverlay(ctx, ov, settings) {
         if (fillW > 0) {
             bc.fillStyle = accentColor;
             bc.fillRect(0, 0, fillW, 4);
+        }
+    } else if (ov.text === "RATING") {
+        // Show 5 segments for 5 stars
+        var ratingFillW = Math.round((currentRating / 10) * 200);
+        if (ratingFillW > 0) {
+            bc.fillStyle = accentColor;
+            bc.fillRect(0, 0, ratingFillW, 4);
         }
     }
 
@@ -1460,7 +1926,10 @@ function setImage(ctx, img) {
 
 function setFeedback(ctx, payload) {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
+        debugLog("[FEEDBACK]", "Sending feedback - label: " + (payload.label || "none"));
         websocket.send(JSON.stringify({ event: "setFeedback", context: ctx, payload: payload }));
+    } else {
+        debugLog("[FEEDBACK]", "ERROR: Websocket not open! State: " + (websocket ? websocket.readyState : "null"));
     }
 }
 
@@ -1494,4 +1963,4 @@ function stopPolling() {
     log("Stopped polling");
 }
 
-log("Ampdeck v1.1.0 loaded");
+log("Ampdeck v1.3.1 loaded");

@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Ampdeck Strip Settings</title>
+    <title>Ampdeck Settings</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -102,78 +102,6 @@
     </style>
 </head>
 <body>
-    <div class="sdpi-heading">Display Content</div>
-    
-    <div class="sdpi-item">
-        <label>Show</label>
-        <select id="displayMode">
-            <option value="artist">Artist</option>
-            <option value="album">Album</option>
-            <option value="track">Track Title</option>
-            <option value="time">Time (Elapsed / Total)</option>
-        </select>
-        <div class="help-text">Choose what this dial section displays</div>
-    </div>
-    
-    <div class="sdpi-item">
-        <label>Font Size</label>
-        <select id="fontSize">
-            <option value="12">Small (12)</option>
-            <option value="16">Medium (16)</option>
-            <option value="20">Large (20)</option>
-            <option value="24">X-Large (24)</option>
-            <option value="28">XX-Large (28)</option>
-        </select>
-        <div class="help-text">Adjust text size on the dial</div>
-    </div>
-
-    <div class="sdpi-heading">Dial Controls</div>
-
-    <div class="sdpi-item">
-        <label>Dial Action</label>
-        <select id="dialAction">
-            <option value="none">None</option>
-            <option value="skip">Rotate: Next/Previous, Press: Play/Pause</option>
-            <option value="volume">Rotate: Volume, Press: Play/Pause</option>
-        </select>
-        <div class="help-text">What the physical dial does when rotated</div>
-    </div>
-
-    <div class="sdpi-item">
-        <label>Dial Press Action</label>
-        <select id="dialPressAction">
-            <option value="playpause">Play / Pause</option>
-            <option value="shuffle">Toggle Shuffle</option>
-            <option value="repeat">Cycle Repeat</option>
-        </select>
-        <div class="help-text">What happens when the dial is pressed</div>
-    </div>
-
-    <div class="sdpi-heading">Progress Bar</div>
-    
-    <div class="sdpi-item">
-        <label>Total Panels</label>
-        <select id="progressTotalPanels">
-            <option value="1">1 panel (100% on this panel)</option>
-            <option value="2">2 panels (50% each)</option>
-            <option value="3">3 panels (33% each)</option>
-            <option value="4">4 panels (25% each)</option>
-        </select>
-        <div class="help-text">How many panels share the progress bar</div>
-    </div>
-    
-    <div class="sdpi-item">
-        <label>This Panel's Position</label>
-        <select id="progressPosition">
-            <option value="1">Position 1 (leftmost)</option>
-            <option value="2">Position 2</option>
-            <option value="3">Position 3</option>
-            <option value="4">Position 4 (rightmost)</option>
-            <option value="0">None (no progress bar)</option>
-        </select>
-        <div class="help-text">Where this panel sits in the progress bar sequence</div>
-    </div>
-
     <div class="sdpi-heading">Appearance</div>
 
     <div class="sdpi-item">
@@ -185,7 +113,7 @@
             <option value="#FFBF00">Amber</option>
             <option value="#000000">Black</option>
         </select>
-        <div class="help-text">Primary text color on the strip</div>
+        <div class="help-text">Primary text color on buttons</div>
     </div>
 
     <div class="sdpi-item-checkbox">
@@ -193,6 +121,40 @@
         <label for="dynamicColors">Dynamic accent colors from album art</label>
     </div>
     <div class="help-text" style="margin-top: -6px; margin-bottom: 10px;">When off, accent colors stay orange</div>
+
+    <div id="ratingSettings" style="display: none;">
+        <div class="sdpi-heading">Rating Button Settings</div>
+        
+        <div class="sdpi-item">
+            <label>Display Style</label>
+            <select id="ratingDisplay">
+                <option value="stars">Stars Only (★★★★☆)</option>
+                <option value="numeric">Numeric Only (4.5)</option>
+                <option value="both">Both (4.5 / 5)</option>
+            </select>
+            <div class="help-text">How to display the rating</div>
+        </div>
+        
+        <div class="sdpi-item">
+            <label>Font Size</label>
+            <select id="ratingFontSize">
+                <option value="32">Small (32px)</option>
+                <option value="40">Medium (40px)</option>
+                <option value="48">Large (48px)</option>
+                <option value="56">Extra Large (56px)</option>
+            </select>
+            <div class="help-text">Size of the rating display</div>
+        </div>
+        
+        <div class="sdpi-item">
+            <label>Rating Mode</label>
+            <select id="ratingMode">
+                <option value="half">Half Stars (0.5 increment)</option>
+                <option value="full">Full Stars (1.0 increment)</option>
+            </select>
+            <div class="help-text">Tap to cycle by half or full stars</div>
+        </div>
+    </div>
 
     <div class="sdpi-heading">Plexamp Player</div>
 
@@ -252,13 +214,16 @@
             actionInfo = JSON.parse(inActionInfo);
             
             const settings = actionInfo.payload.settings || {};
+            const actionUUID = actionInfo.action;
             
-            document.getElementById('displayMode').value = settings.displayMode || 'artist';
-            document.getElementById('fontSize').value = settings.fontSize || '16';
-            document.getElementById('dialAction').value = settings.dialAction || 'none';
-            document.getElementById('dialPressAction').value = settings.dialPressAction || 'playpause';
-            document.getElementById('progressTotalPanels').value = settings.progressTotalPanels || '3';
-            document.getElementById('progressPosition').value = settings.progressPosition || '1';
+            // Show rating settings only for rating button
+            if (actionUUID === 'com.dreadheadhippy.ampdeck.rating') {
+                document.getElementById('ratingSettings').style.display = 'block';
+                document.getElementById('ratingDisplay').value = settings.ratingDisplay || 'stars';
+                document.getElementById('ratingFontSize').value = settings.ratingFontSize || '48';
+                document.getElementById('ratingMode').value = settings.ratingMode || 'half';
+            }
+            
             document.getElementById('textColor').value = settings.textColor || '#FFFFFF';
             document.getElementById('dynamicColors').checked = settings.dynamicColors !== false;
             document.getElementById('playerUrl').value = settings.playerUrl || '';
@@ -298,23 +263,63 @@
             };
         }
 
+        function validateUrl(url, allowLocalHttp) {
+            if (!url) return { valid: true }; // Empty is ok
+            try {
+                const parsed = new URL(url);
+                if (!['http:', 'https:'].includes(parsed.protocol)) {
+                    return { valid: false, error: 'Only HTTP and HTTPS are allowed' };
+                }
+                if (parsed.protocol === 'http:' && !allowLocalHttp) {
+                    const isLocal = parsed.hostname === 'localhost' || 
+                                  parsed.hostname === '127.0.0.1' ||
+                                  parsed.hostname.startsWith('192.168.') ||
+                                  parsed.hostname.startsWith('10.') ||
+                                  parsed.hostname.startsWith('172.');
+                    if (!isLocal) {
+                        return { valid: false, error: 'HTTPS required for remote servers' };
+                    }
+                }
+                return { valid: true };
+            } catch (e) {
+                return { valid: false, error: 'Invalid URL: ' + e.message };
+            }
+        }
+
         function saveSettings() {
+            const playerUrl = document.getElementById('playerUrl').value.trim();
+            const serverUrl = document.getElementById('plexServerUrl').value.trim();
+            
+            // Validate URLs
+            const playerValidation = validateUrl(playerUrl, true);
+            const serverValidation = validateUrl(serverUrl, false);
+            
+            if (!playerValidation.valid) {
+                showStatus('error', 'Player URL: ' + playerValidation.error);
+                return;
+            }
+            if (!serverValidation.valid) {
+                showStatus('error', 'Server URL: ' + serverValidation.error);
+                return;
+            }
+            
             const settings = {
-                displayMode: document.getElementById('displayMode').value,
-                fontSize: document.getElementById('fontSize').value,
-                dialAction: document.getElementById('dialAction').value,
-                dialPressAction: document.getElementById('dialPressAction').value,
-                progressTotalPanels: document.getElementById('progressTotalPanels').value,
-                progressPosition: document.getElementById('progressPosition').value,
                 textColor: document.getElementById('textColor').value,
                 dynamicColors: document.getElementById('dynamicColors').checked,
-                playerUrl: document.getElementById('playerUrl').value.trim(),
-                plexServerUrl: document.getElementById('plexServerUrl').value.trim(),
+                playerUrl: playerUrl,
+                plexServerUrl: serverUrl,
                 plexToken: document.getElementById('plexToken').value.trim(),
                 clientName: document.getElementById('clientName').value.trim(),
                 syncOffset: parseInt(document.getElementById('syncOffset').value) || 0,
                 debugMode: document.getElementById('debugMode').checked
             };
+            
+            // Add rating-specific settings if rating button
+            if (actionInfo && actionInfo.action === 'com.dreadheadhippy.ampdeck.rating') {
+                settings.ratingDisplay = document.getElementById('ratingDisplay').value;
+                settings.ratingFontSize = document.getElementById('ratingFontSize').value;
+                settings.ratingMode = document.getElementById('ratingMode').value;
+            }
 
             if (websocket && websocket.readyState === WebSocket.OPEN) {
                 websocket.send(JSON.stringify({
@@ -326,32 +331,26 @@
                 websocket.send(JSON.stringify({
                     event: 'setGlobalSettings',
                     context: uuid,
-                    payload: {
-                        playerUrl: settings.playerUrl,
-                        plexServerUrl: settings.plexServerUrl,
-                        plexToken: settings.plexToken,
-                        clientName: settings.clientName,
-                        syncOffset: settings.syncOffset,
-                        textColor: settings.textColor,
-                        dynamicColors: settings.dynamicColors,
-                        debugMode: settings.debugMode
-                    }
+                    payload: settings
                 }));
             }
         }
+        
+        function showStatus(type, message) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'show ' + type;
+            statusEl.textContent = message;
+        }
 
-        document.getElementById('displayMode').addEventListener('change', saveSettings);
-        document.getElementById('fontSize').addEventListener('change', saveSettings);
-        document.getElementById('dialAction').addEventListener('change', saveSettings);
-        document.getElementById('dialPressAction').addEventListener('change', saveSettings);
-        document.getElementById('progressTotalPanels').addEventListener('change', saveSettings);
-        document.getElementById('progressPosition').addEventListener('change', saveSettings);
         document.getElementById('textColor').addEventListener('change', saveSettings);
         document.getElementById('dynamicColors').addEventListener('change', saveSettings);
         document.getElementById('playerUrl').addEventListener('change', saveSettings);
         document.getElementById('plexServerUrl').addEventListener('change', saveSettings);
         document.getElementById('plexToken').addEventListener('change', saveSettings);
         document.getElementById('clientName').addEventListener('change', saveSettings);
+        document.getElementById('ratingDisplay').addEventListener('change', saveSettings);
+        document.getElementById('ratingFontSize').addEventListener('change', saveSettings);
+        document.getElementById('ratingMode').addEventListener('change', saveSettings);
         document.getElementById('syncOffset').addEventListener('change', saveSettings);
         document.getElementById('debugMode').addEventListener('change', saveSettings);
 
@@ -365,7 +364,7 @@
 
             try {
                 const response = await fetch(playerUrl + '/player/timeline/poll?wait=0&commandID=1', {
-                    headers: { 'X-Plex-Client-Identifier': 'com.rackemrack.ampdeck' }
+                    headers: { 'X-Plex-Client-Identifier': 'com.dreadheadhippy.ampdeck' }
                 });
 
                 if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -413,8 +412,11 @@
             statusEl.textContent = 'Testing server connection...';
 
             try {
-                const response = await fetch(serverUrl + '/status/sessions?X-Plex-Token=' + token, {
-                    headers: { 'Accept': 'application/json' }
+                const response = await fetch(serverUrl + '/status/sessions', {
+                    headers: { 
+                        'Accept': 'application/json',
+                        'X-Plex-Token': token
+                    }
                 });
 
                 if (!response.ok) throw new Error('HTTP ' + response.status);

@@ -18,3 +18,6 @@ node_modules/
 
 # Logs
 *.log
+
+# Personal messages/notes
+MESSAGE_TO_RACKEMRACK.md

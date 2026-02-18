@@ -1,11 +1,25 @@
+> **⚠️ Project Moved — No Further Updates Here**
+>
+> This repository is no longer maintained.  
+> Development has moved to **[Ampdeck+](https://github.com/DreadHeadHippy/AmpdeckPlus)**.
+>
+> Please update your bookmarks and switch to the new repo:  
+> **https://github.com/DreadHeadHippy/AmpdeckPlus**
+
+---
+
 # Ampdeck
 
 **The unofficial Plexamp plugin for Stream Deck**
 
 ![Ampdeck on Stream Deck+](her0.png)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Release](https://img.shields.io/github/v/release/DreadHeadHippy/ampdeck)
+![Status](https://img.shields.io/badge/status-actively%20maintained-brightgreen)
+![Downloads](https://img.shields.io/github/downloads/DreadHeadHippy/ampdeck/total)
+![Last Commit](https://img.shields.io/github/last-commit/DreadHeadHippy/ampdeck)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/rackemrack)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -15,7 +29,9 @@ Ampdeck brings Plexamp to your Stream Deck. See your album art, track info, and 
 
 - **Album Art** — Live album art on any LCD key with a pause overlay. Tap to play/pause.
 - **Now Playing Strip** — Artist, album, track, or elapsed time on each touch strip panel with auto-scrolling for long text.
-- **Dial Controls** — Configurable dial actions: rotate to skip tracks or adjust volume. Press to play/pause, toggle shuffle, or cycle repeat.
+- **Dial Controls** — Configurable dial actions: rotate to skip tracks, adjust volume, or rate tracks. Press to play/pause, toggle shuffle, or cycle repeat.
+- **Star Ratings** — Rate your tracks with half-star or full-star increments using the dial or dedicated rating button. Visual feedback shows the rating with stars.
+- **Rating Button** — Dedicated button showing the current track's star rating. Tap to cycle through ratings with configurable font size and increment mode.
 - **Touch Strip Controls** — Tap to play/pause with visual feedback overlays showing the action taken.
 - **Spanning Progress Bar** — A single progress bar that flows across all 4 dials, with colors extracted from album art.
 - **Play / Pause** — Dedicated button with instant visual feedback.
@@ -41,6 +57,7 @@ Ampdeck works on **any Stream Deck model** — the button actions (Album Art, Pl
 | Repeat | ✓ | ✓ |
 | Track Info | ✓ | ✓ |
 | Time Elapsed | ✓ | ✓ |
+| Rating | ✓ | ✓ |
 | Now Playing Strip | — | ✓ |
 | Dial Controls | — | ✓ |
 | Spanning Progress Bar | — | ✓ |
@@ -53,41 +70,24 @@ Ampdeck works on **any Stream Deck model** — the button actions (Album Art, Pl
 
 ## Installation
 
-1. Download the latest release from the [Releases](https://github.com/rackemrack/ampdeck/releases) page
-2. Extract the zip
-3. **Close Stream Deck completely**
+1. Download **`com.dreadheadhippy.ampdeck.streamDeckPlugin`** from the [Releases](https://github.com/DreadHeadHippy/ampdeck/releases/tag/v1.3.1) page
+2. Double-click the file
 
-**Windows:**
-
-4. Double-click **`install.bat`**
-
-**macOS:**
-
-4. Open Terminal, navigate to the extracted folder, and run:
-   ```
-   chmod +x install.sh && ./install.sh
-   ```
-
-5. Start Stream Deck
+That's it. Stream Deck handles the rest.
 
 ## Updating
 
-Updates use the same process as a fresh install — the installer replaces the existing plugin files automatically. Your settings (server URL, token, client name, etc.) are preserved.
+1. Download the latest **`install.bat`** from the [Releases](https://github.com/DreadHeadHippy/ampdeck/releases/tag/v1.3.1) page
+2. Double-click the file
 
-1. Download the latest release from the [Releases](https://github.com/rackemrack/ampdeck/releases) page
-2. Extract the zip
-3. **Close Stream Deck completely**
-4. Run `install.bat` (Windows) or `./install.sh` (macOS) — same as initial install
-5. Start Stream Deck
-
-That's it. No need to remove the old version first.
+Stream Deck automatically replaces the old version. Your settings are preserved.
 
 ## Setup
 
 1. Find **Ampdeck** in the actions list on the right side of the Stream Deck app
 2. Drag **Album Art** to any button
 3. Drag **Now Playing Strip** to all 4 dials
-4. Optionally drag **Play/Pause**, **Previous**, **Next**, **Shuffle**, **Repeat**, **Track Info**, or **Time Elapsed** to buttons
+4. Optionally drag **Play/Pause**, **Previous**, **Next**, **Shuffle**, **Repeat**, **Track Info**, **Time Elapsed**, or **Rating** to buttons
 5. Click any Ampdeck action and configure:
 
 ### Connection Settings
@@ -111,7 +111,8 @@ Each dial panel can be configured independently:
 |---------|---------|
 | **Display Mode** | Artist, Album, Track Title, or Time |
 | **Font Size** | Small (12) through XX-Large (28) |
-| **Dial Action** | None, Next/Previous (rotate), or Volume (rotate) |
+| **Dial Action** | None, Next/Previous (rotate), Volume (rotate), or Star Rating (rotate) |
+| **Rating Mode** | Half Star (0.5 increment) or Full Star (1.0 increment) — only appears when Dial Action is set to Star Rating |
 | **Dial Press** | Play/Pause, Toggle Shuffle, or Cycle Repeat |
 | **Total Panels** | How many panels share the progress bar (1–4) |
 | **Panel Position** | This panel's position in the progress bar sequence, or None to disable |
@@ -156,7 +157,7 @@ If something isn't working, enable **Debug Logging** in the Advanced section of 
 
 ## Manual Installation
 
-Copy the `com.rackemrack.ampdeck.sdPlugin` folder to:
+Copy the `com.dreadheadhippy.ampdeck.sdPlugin` folder to:
 
 **Windows:**
 ```
