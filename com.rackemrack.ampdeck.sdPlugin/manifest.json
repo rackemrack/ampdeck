@@ -102,6 +102,32 @@
       "PropertyInspectorPath": "pi.html"
     },
     {
+      "Name": "Volume Up",
+      "States": [
+        {
+          "Image": "imgs/volume-up-icon",
+          "ShowTitle": false
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Increase volume",
+      "UUID": "com.rackemrack.ampdeck.volume-up",
+      "PropertyInspectorPath": "pi.html"
+    },
+    {
+      "Name": "Volume Down",
+      "States": [
+        {
+          "Image": "imgs/volume-down-icon",
+          "ShowTitle": false
+        }
+      ],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tap to Decrease volume, Hold to mute",
+      "UUID": "com.rackemrack.ampdeck.volume-down",
+      "PropertyInspectorPath": "pi.html"
+    },
+    {
       "Icon": "imgs/info-icon",
       "Name": "Track Info",
       "States": [

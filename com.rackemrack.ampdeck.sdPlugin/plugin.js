@@ -33,6 +33,7 @@ var SEEK_AMOUNT = 10000;
 
 // Volume state
 var currentVolume = 50;
+var previousVolume = 0;
 var VOLUME_STEP = 5;
 
 // Shuffle/Repeat state
@@ -236,7 +237,7 @@ function onWillDisappear(data) {
     }
     if (stripScrollState[data.context]) delete stripScrollState[data.context];
     if (buttonHoldState[data.context]) {
-        clearInterval(buttonHoldState[data.context].seekInterval);
+        clearInterval(buttonHoldState[data.context].intervalCallback);
         delete buttonHoldState[data.context];
     }
     if (Object.keys(actions).length === 0) stopPolling();
@@ -277,15 +278,31 @@ function applyGlobalFromSettings(s) {
 // ============================================
 function onKeyDown(data) {
     var ctx = data.context, action = data.action;
-    buttonHoldState[ctx] = { pressTime: Date.now(), action: action, seekInterval: null, didSeek: false };
+    buttonHoldState[ctx] = { 
+        pressTime: Date.now(), 
+        action: action, 
+        type: null,
+        intervalCallback: null,
+        didExecute: false
+    };
 
     if (action === "com.rackemrack.ampdeck.previous" || action === "com.rackemrack.ampdeck.next") {
         setTimeout(function() {
-            if (buttonHoldState[ctx] && !buttonHoldState[ctx].didSeek) {
-                buttonHoldState[ctx].didSeek = true;
+            if (buttonHoldState[ctx] && !buttonHoldState[ctx].didExecute) {
+                buttonHoldState[ctx].type = "seek";
+                buttonHoldState[ctx].didExecute = true;
                 var dir = action.indexOf("previous") >= 0 ? -1 : 1;
                 seekTrack(dir * SEEK_AMOUNT);
-                buttonHoldState[ctx].seekInterval = setInterval(function() { seekTrack(dir * SEEK_AMOUNT); }, SEEK_INTERVAL);
+                buttonHoldState[ctx].intervalCallback = setInterval(function() { seekTrack(dir * SEEK_AMOUNT); }, SEEK_INTERVAL);
+            }
+        }, HOLD_THRESHOLD);
+    }
+    if (action === "com.rackemrack.ampdeck.volume-down") {
+        setTimeout(function() {
+            if (buttonHoldState[ctx] && !buttonHoldState[ctx].didExecute) {
+                buttonHoldState[ctx].type = "mute";
+                buttonHoldState[ctx].didExecute = true;
+                volumeMute();
             }
         }, HOLD_THRESHOLD);
     }
@@ -293,14 +310,16 @@ function onKeyDown(data) {
 
 function onKeyUp(data) {
     var ctx = data.context, action = data.action, hs = buttonHoldState[ctx];
-    if (hs && hs.seekInterval) clearInterval(hs.seekInterval);
+    if (hs && hs.intervalCallback) clearInterval(hs.intervalCallback);
 
-    if (!hs || !hs.didSeek) {
+    if (!hs || !hs.didExecute) {
         if (action === "com.rackemrack.ampdeck.album-art" || action === "com.rackemrack.ampdeck.play-pause") togglePlayPause();
         else if (action === "com.rackemrack.ampdeck.previous") skipPrevious();
         else if (action === "com.rackemrack.ampdeck.next") skipNext();
         else if (action === "com.rackemrack.ampdeck.shuffle") toggleShuffle();
         else if (action === "com.rackemrack.ampdeck.repeat") cycleRepeat();
+        else if (action === "com.rackemrack.ampdeck.volume-up") volumeUp();
+        else if (action === "com.rackemrack.ampdeck.volume-down") volumeDown();
     }
     delete buttonHoldState[ctx];
 }
@@ -474,10 +493,28 @@ function seekTrack(offsetMs) {
     });
 }
 
+function volumeUp() {
+    var newVolume = Math.max(0, Math.min(100, currentVolume + VOLUME_STEP));
+    setVolume(newVolume);
+}
+
+function volumeDown() {
+    var newVolume = Math.max(0, Math.min(100, currentVolume - VOLUME_STEP));
+    setVolume(newVolume);
+}
+
+function volumeMute() {
+    if (currentVolume > 0) {
+        previousVolume = currentVolume;
+        setVolume(0);
+    } else {
+        setVolume(previousVolume > 0 ? previousVolume : 50);
+    }
+}
+
 function setVolume(level) {
-    currentVolume = Math.max(0, Math.min(100, level));
-    playerCommand("/player/playback/setParameters", "volume=" + currentVolume).then(function() {
-        logDebug("Volume set: " + currentVolume);
+    playerCommand("/player/playback/setParameters", "volume=" + level).then(function() {
+        logDebug("Volume set: " + level);
     });
 }
 
